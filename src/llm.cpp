@@ -222,6 +222,36 @@ std::string Llm::generate(const std::vector<int>& input_ids, std::ostream* os, c
     return output_str;
 }
 
+void Llm::generate(size_t idx, const std::vector<int>& input_ids) {
+    prompt_len_ = static_cast<int>(input_ids.size());
+    history_ids_.insert(history_ids_.end(), input_ids.begin(), input_ids.end()); // push to history_ids_
+    auto st = std::chrono::system_clock::now();
+    // std::cout << "input id = " << input_ids.size() << ", input_ids = " << std::endl;
+    // for (size_t i = 0; i < input_ids.size(); i++)
+    // {
+    //     std::cout << input_ids[i] << " ";
+    // }
+    // std::cout << "]" << std::endl;
+
+    auto logits = forward(input_ids);
+    // int token = sample(logits, history_ids_);
+    auto scores = logits.GetTensorMutableData<float>();
+    auto shape = logits.GetTensorTypeAndShapeInfo().GetShape();
+    auto size = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int64_t>());
+    char file_name[64] = "\0";
+    snprintf(file_name, sizeof(file_name) / sizeof(file_name[0]), "tmp/logits_%08lu.bin", idx);
+    std::ofstream ofs(file_name, std::ios::out | std::ios::binary);
+    ofs.write(reinterpret_cast<const char *>(&scores[0]), size * sizeof(float));
+    ofs.close();
+
+    // std::cout << "logit size = " << size << ", score = " << std::endl;
+    // for (size_t i = 0; i < size; i++)
+    // {
+    //     std::cout << scores[i] << " ";
+    // }
+    // std::cout << "]" << std::endl;
+}
+
 std::vector<int> Llm::tokenizer(const std::string& query) {
     auto prompt = apply_prompt_template(query);
     auto input_ids = tokenizer_->encode(prompt);
@@ -256,6 +286,26 @@ std::string Llm::response(const std::vector<PromptItem>& chat_prompts, std::ostr
     auto input_ids = tokenizer_->encode(prompt);
     // printf("input_ids (%lu): ", input_ids.size()); for (auto id : input_ids) printf("%d, ", id); printf("\n");
     return generate(input_ids, os, end_with);
+}
+
+template <typename T>
+void Llm::read_binary_file(const std::string &file, std::vector<T> &v)
+{
+    std::ifstream ifs(file, std::ios::binary);
+    ifs.seekg(0, ifs.end);
+    size_t len = ifs.tellg();
+    v.resize(len / sizeof(T));
+    ifs.seekg(0, ifs.beg);
+    ifs.read(reinterpret_cast<char *>(v.data()), len);
+    ifs.close();
+}
+
+void Llm::response(size_t idx, const std::string& file) {
+    std::cout << "file = " << file << std::endl;
+    generate_init();
+    std::vector<int> input_ids;
+    read_binary_file(file, input_ids);
+    generate(idx, input_ids);
 }
 
 void Llm::print_speed() {

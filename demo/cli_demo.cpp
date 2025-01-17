@@ -8,6 +8,8 @@
 #include "llm.hpp"
 #include <fstream>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <dirent.h>
 
 void benchmark(Llm* llm, std::string prompt_file) {
     std::cout << "prompt file is " << prompt_file << std::endl;
@@ -49,19 +51,68 @@ void benchmark(Llm* llm, std::string prompt_file) {
     printf("##################################\n");
 }
 
+std::vector<std::string> get_input_list(const char *dataset_path) {
+    std::vector<std::string> v;
+    v.reserve(10000);
+
+    DIR *d;
+    struct dirent *dir;
+    if ((d = opendir(dataset_path)) != NULL)
+    {
+        std::string base(dataset_path);
+        while ((dir = readdir(d)) != NULL)
+        {
+            struct stat statbuf;
+            std::string file_name = base + "/" + std::string(dir->d_name);
+            stat(file_name.c_str(), &statbuf);
+            if (S_ISREG(statbuf.st_mode))
+            {
+                v.push_back(file_name);
+            }
+        }
+        closedir(d);
+    }
+    else
+    {
+        printf("Unable to open %s\n", dataset_path);
+    }
+
+    return v;
+}
+
+
+void evaluate(Llm* llm, const std::string &dataset_path) {
+    std::cout << "dataset_path = " << dataset_path << std::endl;
+
+    // read dataset directory
+    auto file_list = get_input_list(dataset_path.c_str());
+    std::sort(file_list.begin(), file_list.end());
+    auto size = file_list.size();
+    size = 1020;
+    for (size_t i = 0; i < size; i++)
+    {
+        llm->response(i, file_list[i]);
+    }
+}
+
 int main(int argc, const char* argv[]) {
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " model_dir <prompt.txt>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " model_dir mode <prompt.txt | dataset_path>" << std::endl;
         return 0;
     }
     std::string model_dir = argv[1];
     std::cout << "model path is " << model_dir << std::endl;
     std::unique_ptr<Llm> llm(Llm::createLLM(model_dir));
     llm->load();
-    if (argc < 3) {
+    if (strcmp(argv[2], "chat") == 0) {
         llm->chat();
+    } else if (strcmp(argv[2], "benchmark") == 0){
+        std::string prompt_file = argv[3];
+        benchmark(llm.get(), prompt_file);
+    } else {
+        std::string dataset_path = argv[3];
+        evaluate(llm.get(), dataset_path);
     }
-    std::string prompt_file = argv[2];
-    benchmark(llm.get(), prompt_file);
+
     return 0;
 }
