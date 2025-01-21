@@ -95,6 +95,17 @@ int Llm::sample(Value& logits, const std::vector<int>& pre_ids) {
     return token_id;
 }
 
+template<typename T>
+void Llm::dump_memory(const char *info, const T *buf, size_t size)
+{
+    std::cout << info << ": size = " << size << std::endl;
+    for (size_t i = 0; i < size; i++)
+    {
+        std::cout << buf[i] << " ";
+    }
+    std::cout << std::endl;
+}
+
 static std::string apply_template(std::string prompt_template, const std::string& content, const std::string& role = "") {
     if (prompt_template.empty()) return content;
     if (!role.empty()) {
@@ -222,7 +233,26 @@ std::string Llm::generate(const std::vector<int>& input_ids, std::ostream* os, c
     return output_str;
 }
 
-void Llm::generate(size_t idx, const std::vector<int>& input_ids) {
+std::vector<float> Llm::softmax(const std::vector<float>& logits) {
+    std::vector<float> probabilities(logits.size());
+    float max_logit = *std::max_element(logits.begin(), logits.end()); // 防止数值溢出
+    float sum_exp = 0.0f;
+
+    // 计算 exp(x_i - max_logit) 和 sum(exp(x_i - max_logit))
+    for (size_t i = 0; i < logits.size(); ++i) {
+        probabilities[i] = std::exp(logits[i] - max_logit);
+        sum_exp += probabilities[i];
+    }
+
+    // 归一化得到概率分布
+    for (size_t i = 0; i < probabilities.size(); ++i) {
+        probabilities[i] /= sum_exp;
+    }
+
+    return probabilities;
+}
+
+float Llm::generate(size_t idx, const std::vector<int>& input_ids) {
     prompt_len_ = static_cast<int>(input_ids.size());
     history_ids_.insert(history_ids_.end(), input_ids.begin(), input_ids.end()); // push to history_ids_
     auto st = std::chrono::system_clock::now();
@@ -238,18 +268,47 @@ void Llm::generate(size_t idx, const std::vector<int>& input_ids) {
     auto scores = logits.GetTensorMutableData<float>();
     auto shape = logits.GetTensorTypeAndShapeInfo().GetShape();
     auto size = std::accumulate(shape.begin(), shape.end(), 1, std::multiplies<int64_t>());
-    char file_name[64] = "\0";
-    snprintf(file_name, sizeof(file_name) / sizeof(file_name[0]), "tmp/logits_%08lu.bin", idx);
-    std::ofstream ofs(file_name, std::ios::out | std::ios::binary);
-    ofs.write(reinterpret_cast<const char *>(&scores[0]), size * sizeof(float));
-    ofs.close();
 
-    // std::cout << "logit size = " << size << ", score = " << std::endl;
-    // for (size_t i = 0; i < size; i++)
-    // {
-    //     std::cout << scores[i] << " ";
-    // }
-    // std::cout << "]" << std::endl;
+    // dump to bin
+    // char file_name[64] = "\0";
+    // snprintf(file_name, sizeof(file_name) / sizeof(file_name[0]), "tmp/logits_%08lu.bin", idx);
+    // std::ofstream ofs(file_name, std::ios::out | std::ios::binary);
+    // ofs.write(reinterpret_cast<const char *>(&scores[0]), size * sizeof(float));
+    // ofs.close();
+
+    dump_memory("dump logits", reinterpret_cast<const float *>(&scores[0]), 128);
+
+    // 4.2 计算 softmax 概率分布
+    const float *p_scores = reinterpret_cast<const float *>(&scores[0]);
+    std::vector<float> v_logits(p_scores, p_scores + 151936);
+    std::vector<float> probabilities = softmax(v_logits);
+
+    // 获取真实类别的概率
+    std::vector<int32_t> v_target_id;
+    // read_binary_file(target_id_list[b], v_target_id);
+    char target_id_file_buf[128] ={0};
+    char target_id_path[] = "/home/zhangyang/workspace/github/llm/huggingface/metric/wikitext/wikitext2_dataset/256/target_id";
+    snprintf(target_id_file_buf, sizeof(target_id_file_buf) / sizeof(target_id_file_buf[0]), "%s/target_id_%08ld.bin", target_id_path, idx);
+    std::string target_id_file(target_id_file_buf);
+    std::cout << "target_id_file= " << target_id_file << std::endl;
+    read_binary_file(target_id_file, v_target_id);
+    dump_memory("target ids", reinterpret_cast<const int *>(v_target_id.data()), v_target_id.size());
+    float true_class_prob = probabilities[v_target_id[0]];
+    std::cout << "true_class_prob = " << true_class_prob << std::endl;
+
+    // 计算交叉熵损失
+    float loss = 0.f;
+    if (true_class_prob > 0)
+    {
+        loss += -std::log(true_class_prob);
+    }
+    else
+    {
+        // 如果概率为 0，避免 log(0) 的无穷大问题
+        loss += -std::log(std::numeric_limits<float>::min());
+    }
+
+    return loss;
 }
 
 std::vector<int> Llm::tokenizer(const std::string& query) {
@@ -300,12 +359,11 @@ void Llm::read_binary_file(const std::string &file, std::vector<T> &v)
     ifs.close();
 }
 
-void Llm::response(size_t idx, const std::string& file) {
-    std::cout << "file = " << file << std::endl;
+float Llm::response(size_t idx, const std::string& file) {
     generate_init();
     std::vector<int> input_ids;
     read_binary_file(file, input_ids);
-    generate(idx, input_ids);
+    return generate(idx, input_ids);
 }
 
 void Llm::print_speed() {
@@ -351,6 +409,11 @@ Value Llm::embedding(const std::vector<int>& input_ids) {
         }
     }
     fclose(file);
+    {
+        dump_memory("dump input_ids", reinterpret_cast<const int *>(input_ids.data()), seq_len);
+        auto ptr = inputs_embeds.GetTensorMutableData<float>();
+        dump_memory("dump inputs_embeds", ptr, 128);
+    }
     return std::move(inputs_embeds);
 }
 
@@ -365,11 +428,15 @@ std::string Llm::decode(int id) {
 }
 
 Value Llm::gen_attention_mask(int seq_len) {
+    std::cout << "gen_attention_mask: all_seq_len_=" << all_seq_len_ <<", seq_len=" << seq_len << std::endl;
     int kv_seq_len = all_seq_len_ + seq_len;
     if (seq_len == 1) {
         kv_seq_len = seq_len;
     }
-    if (config_->attention_mask() == "float") {
+    std::cout << "gen_attention_mask: all_seq_len_=" << all_seq_len_ <<", seq_len=" << seq_len << ", kv_seq_len=" << kv_seq_len << std::endl;
+    std::cout << "config_->attention_mask() = " << config_->attention_mask() << std::endl;
+    if (config_->attention_mask() == "float")
+    {
         auto attention_mask = _Input<float>({1, 1, seq_len, kv_seq_len}, runtime_manager_);
         auto ptr = attention_mask.GetTensorMutableData<float>();
         for (int i = 0; i < seq_len; i++) {
@@ -378,8 +445,13 @@ Value Llm::gen_attention_mask(int seq_len) {
                 ptr[kv_seq_len * i + j] = (j > row) * std::numeric_limits<float>::lowest();
             }
         }
+        {
+            dump_memory("dump attention_mask", ptr, seq_len * kv_seq_len);
+        }
         return attention_mask;
-    } else {
+    }
+    else
+    {
         auto attention_mask = _Input<int>({1, 1, seq_len, kv_seq_len}, runtime_manager_);
         auto ptr = attention_mask.GetTensorMutableData<int>();
         if (config_->attention_mask() == "glm") {
@@ -432,6 +504,9 @@ Value Llm::gen_position_ids(int seq_len) {
             for (int i = 0; i < seq_len; i++) {
                 ptr[i] = i + all_seq_len_;
             }
+        }
+        {
+            dump_memory("dump position_ids", ptr, seq_len);
         }
         return position_ids;
     }

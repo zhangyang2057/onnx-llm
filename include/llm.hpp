@@ -75,11 +75,11 @@ public:
     std::string apply_chat_template(const std::vector<PromptItem>& chat_prompts) const;
     std::string response(const std::string& user_content, std::ostream* os = &std::cout, const char* end_with = nullptr);
     std::string response(const std::vector<PromptItem>& chat_prompts, std::ostream* os = &std::cout, const char* end_with = nullptr);
-    void response(size_t idx, const std::string& file);
+    float response(size_t idx, const std::string& file);
     void generate_init();
     std::string generate(const std::vector<int>& input_ids, std::ostream* os, const char* end_with);
     std::vector<int> generate(const std::vector<int>& input_ids, int max_new_tokens = -1);
-    void generate(size_t idx, const std::vector<int>& input_ids);
+    float generate(size_t idx, const std::vector<int>& input_ids);
     void print_speed();
     // config function
     std::string dump_config();
@@ -112,6 +112,9 @@ protected:
     virtual Value gen_position_ids(int seq_len);
     template <typename T>
     void read_binary_file(const std::string &file_name, std::vector<T> &v);
+    template <typename T>
+    void dump_memory(const char *info, const T *buf, size_t size);
+    std::vector<float> softmax(const std::vector<float> &logits);
 };
 // Llm end
 

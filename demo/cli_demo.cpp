@@ -81,23 +81,27 @@ std::vector<std::string> get_input_list(const char *dataset_path) {
 }
 
 
-void evaluate(Llm* llm, const std::string &dataset_path) {
-    std::cout << "dataset_path = " << dataset_path << std::endl;
-
+void evaluate(Llm* llm, const std::string &dataset_path, size_t num) {
     // read dataset directory
     auto file_list = get_input_list(dataset_path.c_str());
     std::sort(file_list.begin(), file_list.end());
-    auto size = file_list.size();
-    size = 1020;
-    for (size_t i = 0; i < size; i++)
+    float loss_sum = 0.f;
+    assert(num <= file_list.size());
+    for (size_t i = 0; i < num; i++)
     {
-        llm->response(i, file_list[i]);
+        auto loss = llm->response(i, file_list[i]);
+        std::cout << "loss = " << loss << std::endl;
+        loss_sum += loss;
     }
+
+    auto loss_ave = loss_sum / num;
+    float ppl = std::exp(loss_ave);
+    std::cout << "loss_ave = " << loss_ave << ", ppl = " << ppl << std::endl;
 }
 
 int main(int argc, const char* argv[]) {
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " model_dir mode <prompt.txt | dataset_path>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " model_dir mode <prompt.txt | dataset_path>, <number>" << std::endl;
         return 0;
     }
     std::string model_dir = argv[1];
@@ -111,7 +115,7 @@ int main(int argc, const char* argv[]) {
         benchmark(llm.get(), prompt_file);
     } else {
         std::string dataset_path = argv[3];
-        evaluate(llm.get(), dataset_path);
+        evaluate(llm.get(), dataset_path, atoi(argv[4]));
     }
 
     return 0;
