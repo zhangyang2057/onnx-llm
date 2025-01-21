@@ -75,11 +75,11 @@ public:
     std::string apply_chat_template(const std::vector<PromptItem>& chat_prompts) const;
     std::string response(const std::string& user_content, std::ostream* os = &std::cout, const char* end_with = nullptr);
     std::string response(const std::vector<PromptItem>& chat_prompts, std::ostream* os = &std::cout, const char* end_with = nullptr);
-    float response(size_t idx, const std::string& file);
+    float response(const std::string& input_id_file, const std::string& target_id_file);
     void generate_init();
     std::string generate(const std::vector<int>& input_ids, std::ostream* os, const char* end_with);
     std::vector<int> generate(const std::vector<int>& input_ids, int max_new_tokens = -1);
-    float generate(size_t idx, const std::vector<int>& input_ids);
+    float generate(const std::vector<int>& input_ids, const std::vector<int>& target_ids);
     void print_speed();
     // config function
     std::string dump_config();

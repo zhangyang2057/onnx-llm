@@ -252,7 +252,7 @@ std::vector<float> Llm::softmax(const std::vector<float>& logits) {
     return probabilities;
 }
 
-float Llm::generate(size_t idx, const std::vector<int>& input_ids) {
+float Llm::generate(const std::vector<int>& input_ids, const std::vector<int>& target_ids) {
     prompt_len_ = static_cast<int>(input_ids.size());
     history_ids_.insert(history_ids_.end(), input_ids.begin(), input_ids.end()); // push to history_ids_
     auto st = std::chrono::system_clock::now();
@@ -284,16 +284,7 @@ float Llm::generate(size_t idx, const std::vector<int>& input_ids) {
     std::vector<float> probabilities = softmax(v_logits);
 
     // 获取真实类别的概率
-    std::vector<int32_t> v_target_id;
-    // read_binary_file(target_id_list[b], v_target_id);
-    char target_id_file_buf[128] ={0};
-    char target_id_path[] = "/home/zhangyang/workspace/github/llm/huggingface/metric/wikitext/wikitext2_dataset/256/target_id";
-    snprintf(target_id_file_buf, sizeof(target_id_file_buf) / sizeof(target_id_file_buf[0]), "%s/target_id_%08ld.bin", target_id_path, idx);
-    std::string target_id_file(target_id_file_buf);
-    std::cout << "target_id_file= " << target_id_file << std::endl;
-    read_binary_file(target_id_file, v_target_id);
-    dump_memory("target ids", reinterpret_cast<const int *>(v_target_id.data()), v_target_id.size());
-    float true_class_prob = probabilities[v_target_id[0]];
+    float true_class_prob = probabilities[target_ids[0]];
     std::cout << "true_class_prob = " << true_class_prob << std::endl;
 
     // 计算交叉熵损失
@@ -359,11 +350,13 @@ void Llm::read_binary_file(const std::string &file, std::vector<T> &v)
     ifs.close();
 }
 
-float Llm::response(size_t idx, const std::string& file) {
+float Llm::response(const std::string& input_id_file, const std::string& target_id_file) {
     generate_init();
     std::vector<int> input_ids;
-    read_binary_file(file, input_ids);
-    return generate(idx, input_ids);
+    std::vector<int> target_ids;
+    read_binary_file(input_id_file, input_ids);
+    read_binary_file(target_id_file, target_ids);
+    return generate(input_ids, target_ids);
 }
 
 void Llm::print_speed() {

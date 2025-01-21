@@ -82,14 +82,25 @@ std::vector<std::string> get_input_list(const char *dataset_path) {
 
 
 void evaluate(Llm* llm, const std::string &dataset_path, size_t num) {
-    // read dataset directory
+#if 0
+    // read dataset directory(297909 files)
     auto file_list = get_input_list(dataset_path.c_str());
     std::sort(file_list.begin(), file_list.end());
-    float loss_sum = 0.f;
+    std::cout << "file_list.size() = " << file_list.size() << std::endl;
     assert(num <= file_list.size());
+#endif
+    float loss_sum = 0.f;
     for (size_t i = 0; i < num; i++)
     {
-        auto loss = llm->response(i, file_list[i]);
+        char input_id_file_buf[128] ={0};
+        snprintf(input_id_file_buf, sizeof(input_id_file_buf) / sizeof(input_id_file_buf[0]), "%s/input_id/input_id_%08ld.bin", dataset_path.c_str(), i);
+
+        char target_id_file_buf[128] ={0};
+        snprintf(target_id_file_buf, sizeof(target_id_file_buf) / sizeof(target_id_file_buf[0]), "%s/target_id/target_id_%08ld.bin", dataset_path.c_str(), i);
+        // std::string target_id_file(target_id_file_buf);
+        std::cout << "target_id_file_buf= " << target_id_file_buf << std::endl;
+
+        auto loss = llm->response(input_id_file_buf, target_id_file_buf);
         std::cout << "loss = " << loss << std::endl;
         loss_sum += loss;
     }
@@ -101,21 +112,20 @@ void evaluate(Llm* llm, const std::string &dataset_path, size_t num) {
 
 int main(int argc, const char* argv[]) {
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " model_dir mode <prompt.txt | dataset_path>, <number>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " model_dir <prompt.txt | dataset_path number>" << std::endl;
         return 0;
     }
     std::string model_dir = argv[1];
     std::cout << "model path is " << model_dir << std::endl;
     std::unique_ptr<Llm> llm(Llm::createLLM(model_dir));
     llm->load();
-    if (strcmp(argv[2], "chat") == 0) {
+    if (argc < 3) {
         llm->chat();
-    } else if (strcmp(argv[2], "benchmark") == 0){
-        std::string prompt_file = argv[3];
+    } else if (argc == 3){
+        std::string prompt_file = argv[2];
         benchmark(llm.get(), prompt_file);
     } else {
-        std::string dataset_path = argv[3];
-        evaluate(llm.get(), dataset_path, atoi(argv[4]));
+        evaluate(llm.get(), argv[2], atoi(argv[3]));
     }
 
     return 0;
