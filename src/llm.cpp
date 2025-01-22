@@ -276,7 +276,9 @@ float Llm::generate(const std::vector<int>& input_ids, const std::vector<int>& t
     // ofs.write(reinterpret_cast<const char *>(&scores[0]), size * sizeof(float));
     // ofs.close();
 
+#if DUMP_DEBUG_INFO
     dump_memory("dump logits", reinterpret_cast<const float *>(&scores[0]), 128);
+#endif
 
     // 4.2 计算 softmax 概率分布
     const float *p_scores = reinterpret_cast<const float *>(&scores[0]);
@@ -285,8 +287,9 @@ float Llm::generate(const std::vector<int>& input_ids, const std::vector<int>& t
 
     // 获取真实类别的概率
     float true_class_prob = probabilities[target_ids[0]];
+#if DUMP_DEBUG_INFO
     std::cout << "true_class_prob = " << true_class_prob << std::endl;
-
+#endif
     // 计算交叉熵损失
     float loss = 0.f;
     if (true_class_prob > 0)
@@ -402,11 +405,14 @@ Value Llm::embedding(const std::vector<int>& input_ids) {
         }
     }
     fclose(file);
+
+#if DUMP_DEBUG_INFO
     {
         dump_memory("dump input_ids", reinterpret_cast<const int *>(input_ids.data()), seq_len);
         auto ptr = inputs_embeds.GetTensorMutableData<float>();
         dump_memory("dump inputs_embeds", ptr, 128);
     }
+#endif
     return std::move(inputs_embeds);
 }
 
@@ -421,13 +427,18 @@ std::string Llm::decode(int id) {
 }
 
 Value Llm::gen_attention_mask(int seq_len) {
+#if DUMP_DEBUG_INFO
     std::cout << "gen_attention_mask: all_seq_len_=" << all_seq_len_ <<", seq_len=" << seq_len << std::endl;
+#endif
     int kv_seq_len = all_seq_len_ + seq_len;
     if (seq_len == 1) {
         kv_seq_len = seq_len;
     }
+
+#if DUMP_DEBUG_INFO
     std::cout << "gen_attention_mask: all_seq_len_=" << all_seq_len_ <<", seq_len=" << seq_len << ", kv_seq_len=" << kv_seq_len << std::endl;
     std::cout << "config_->attention_mask() = " << config_->attention_mask() << std::endl;
+#endif
     if (config_->attention_mask() == "float")
     {
         auto attention_mask = _Input<float>({1, 1, seq_len, kv_seq_len}, runtime_manager_);
@@ -438,9 +449,11 @@ Value Llm::gen_attention_mask(int seq_len) {
                 ptr[kv_seq_len * i + j] = (j > row) * std::numeric_limits<float>::lowest();
             }
         }
+#if DUMP_DEBUG_INFO
         {
             dump_memory("dump attention_mask", ptr, seq_len * kv_seq_len);
         }
+#endif
         return attention_mask;
     }
     else
@@ -498,9 +511,11 @@ Value Llm::gen_position_ids(int seq_len) {
                 ptr[i] = i + all_seq_len_;
             }
         }
+#if DUMP_DEBUG_INFO
         {
             dump_memory("dump position_ids", ptr, seq_len);
         }
+#endif
         return position_ids;
     }
 }

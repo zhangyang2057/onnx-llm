@@ -4,10 +4,15 @@ project(onnx-llm)
 option(BUILD_FOR_ANDROID "Build for android whith mini memory mode." OFF)
 option(LLM_SUPPORT_VISION "Llm model support vision input." OFF)
 option(DUMP_PROFILE_INFO "Dump profile info when chat." OFF)
+option(DUMP_DEBUG_INFO "Dump debug info." OFF)
 option(BUILD_JNI "Build JNI for android app." OFF)
 
 if (DUMP_PROFILE_INFO)
     add_definitions(-DDUMP_PROFILE_INFO)
+endif()
+
+if (DUMP_DEBUG_INFO)
+    add_definitions(-DDUMP_DEBUG_INFO)
 endif()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
